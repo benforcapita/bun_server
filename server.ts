@@ -81,6 +81,51 @@ serve({
       }
     }
 
+    // --- שליחת הודעה (מהאפליקציה שלך החוצה) ---
+    if (req.method === "POST" && url.pathname === "/api/send") {
+      try {
+        const { to, text } = await req.json(); // האפליקציה תשלח לנו למי לשלוח ומה התוכן
+        
+        // שליחה ל-Meta API
+        const metaResponse = await fetch(
+          `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${process.env.META_ACCESS_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              messaging_product: "whatsapp",
+              to: to, // המספר של הלקוח
+              text: { body: text }
+            }),
+          }
+        );
+
+        const data = await metaResponse.json();
+        
+        if (!metaResponse.ok) {
+          console.error("Meta API Error:", data);
+          return new Response(JSON.stringify(data), { status: 500 });
+        }
+
+        // אופציונלי: שמור את ההודעה שיצאה ב-Supabase כדי שתראה אותה בצ'אט
+        await supabase.from('messages').insert({
+          phone_number: to,
+          content: text,
+          direction: 'outgoing', // חשוב! כדי שזה יופיע בצד שמאל/ימין נכון
+          status: 'sent'
+        });
+
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+
+      } catch (err) {
+        console.error("Error sending message:", err);
+        return new Response("Error sending message", { status: 500 });
+      }
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 });
